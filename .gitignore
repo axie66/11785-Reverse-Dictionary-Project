@@ -140,3 +140,5 @@ wantwords-english-baseline/data/*.md
 
 # Storage for trained models
 /trained_models
+
+*/wandb

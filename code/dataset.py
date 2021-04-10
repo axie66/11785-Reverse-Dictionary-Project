@@ -4,9 +4,9 @@ import json
 from typing import List
 from collections import defaultdict
 
-def get_data():
+def get_data(data_dir):
     print('Loading data...')
-    data_dir = '../data/wantwords/%s'
+    data_dir = f'{data_dir}/%s'
 
     word2vec = read_json(data_dir % 'vec_inuse.json')
     print(f"word2vec: {len(word2vec)} vectors")
@@ -38,7 +38,8 @@ def read_json(path):
 class Vectors(object):
     '''Simplfied verison of torchtext.vocab.Vectors' class'''
     def __init__(self, embeddings, embedding_dim):
-        self.itos = list(embeddings.keys())
+        self.itos = ['unk']
+        self.itos.extend(list(embeddings.keys()))
         self.stoi = defaultdict(lambda: 0)
         self.embeddings = torch.zeros(len(embeddings)+1, embedding_dim)
         for i, s in enumerate(embeddings):
@@ -66,10 +67,11 @@ class WantWordsDataset(torch.utils.data.Dataset):
         return len(self.definitions)
     
     def collate_fn(self, batch):
-        #batch.sort(key=lambda elem: len(elem[0]), reverse=True)
         Xs = self.tokenizer([x for x, _ in batch], return_tensors='pt', padding=True)
-        Ys = self.embeddings.get_vecs([y for _, y in batch])
-        return (Xs, Ys)
+        Ys = [y for _, y in batch]
+        Yvecs = self.embeddings.get_vecs(Ys)
+        Yinds = [self.embeddings.stoi[w] for w in Ys]
+        return (Xs, (Yvecs, Yinds))
 
 class Dataset1(torch.utils.data.Dataset):
     def __init__(self, definitions, embeddings, embedding_dim, tokenizer=None):
