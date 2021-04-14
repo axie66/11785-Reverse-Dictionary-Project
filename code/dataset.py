@@ -50,7 +50,7 @@ class Vectors(object):
         vecs = [self.embeddings[self.stoi[t]] for t in tokens]
         return torch.stack(vecs)
 
-    def __getitem__(self, x):
+    def __call__(self, x):
         return self.get_vecs(x)
 
 class WantWordsDataset(torch.utils.data.Dataset):  
@@ -66,12 +66,16 @@ class WantWordsDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.definitions)
     
-    def collate_fn(self, batch):
+    def collate_fn(self, batch, word2vec=True):
         Xs = self.tokenizer([x for x, _ in batch], return_tensors='pt', padding=True)
         Ys = [y for _, y in batch]
-        Yvecs = self.embeddings.get_vecs(Ys)
-        Yinds = [self.embeddings.stoi[w] for w in Ys]
-        return (Xs, (Yvecs, Yinds))
+        if word2vec:
+            Yvecs = self.embeddings.get_vecs(Ys)
+            Yinds = [self.embeddings.stoi[w] for w in Ys]
+            return (Xs, (Yvecs, Yinds))
+        else:
+            Ys = self.tokenizer(Ys, return_tensors='pt', padding=True)
+            return (Xs, Ys)
 
 class Dataset1(torch.utils.data.Dataset):
     def __init__(self, definitions, embeddings, embedding_dim, tokenizer=None):

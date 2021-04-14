@@ -142,3 +142,5 @@ wantwords-english-baseline/data/*.md
 /trained_models
 
 */wandb
+
+*/nohup.out
