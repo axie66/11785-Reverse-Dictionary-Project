@@ -148,9 +148,9 @@ def evaluate_POS(ground_truth, prediction, word_pos):
 
 
 def main(mode):
-    label_list_wd = json.load(open('../'+mode+'_label_list.json'))
+    label_list_wd = json.load(open('./'+mode+'_label_list.json'))
     print('load file : '+mode+'_label_list.json'+' [OK]')
-    pred_list_wd = json.load(open('../'+mode+'_pred_list.json'))
+    pred_list_wd = json.load(open('./'+mode+'_pred_list.json'))
     print('load file : '+mode+'_pred_list.json'+' [OK]')
 
     ####### seen
