@@ -4,12 +4,15 @@ import json
 from typing import List
 from collections import defaultdict
 
-def get_data():
-    print('Loading data...')
-    data_dir = '../data/wantwords/%s'
+import torch.nn.utils.rnn as rnn_utils
 
-    word2vec = read_json(data_dir % 'vec_inuse.json')
-    print(f"word2vec: {len(word2vec)} vectors")
+def get_data(data_dir, word2vec=True):
+    print('Loading data...')
+    data_dir = f'{data_dir}/%s'
+
+    if word2vec:
+        word2vec = read_json(data_dir % 'vec_inuse.json')
+        print(f"word2vec: {len(word2vec)} vectors")
 
     # Train data
     train_data = read_json(data_dir % 'data_train.json')
@@ -27,9 +30,11 @@ def get_data():
     test_data_desc = read_json(data_dir % 'data_desc_c.json')
     print(f"Test data: {len(test_data_seen) + len(test_data_unseen) + len(test_data_desc)} word-def pairs")
 
-    return ((train_data, train_data_defi, dev_data,
-            test_data_seen, test_data_unseen, test_data_desc), 
-            Vectors(word2vec, 300))
+    res = (train_data, train_data_defi, dev_data,
+            test_data_seen, test_data_unseen, test_data_desc)
+    if word2vec:
+        res += (Vectors(word2vec, 300),)
+    return res
 
 def read_json(path):
     with open(path) as f:
@@ -38,7 +43,8 @@ def read_json(path):
 class Vectors(object):
     '''Simplfied verison of torchtext.vocab.Vectors' class'''
     def __init__(self, embeddings, embedding_dim):
-        self.itos = list(embeddings.keys())
+        self.itos = ['<unk>']
+        self.itos.extend(list(embeddings.keys()))
         self.stoi = defaultdict(lambda: 0)
         self.embeddings = torch.zeros(len(embeddings)+1, embedding_dim)
         for i, s in enumerate(embeddings):
@@ -52,6 +58,66 @@ class Vectors(object):
     def __getitem__(self, x):
         return self.get_vecs(x)
 
+def make_vocab(data, tokenizer, mask_size=0):
+    T = tokenizer.convert_tokens_to_ids
+    mask_id = T(['[MASK]'])[0]
+    #target2idx: (vocab_size)
+    target2idx = {}
+    idx2target = []
+    # target_matrix: (vocab_size, mask_size)
+    target_matrix = [] 
+    for dataset in data:
+        for entry in dataset:
+            target = entry['word']
+            if target not in target2idx:
+                target_tokens = T(tokenizer.tokenize(target))
+                target_pad = mask_size - len(target_tokens)
+                # pad/slice target sequences to length mask_size
+                if target_pad < 0:
+                    target_tokens = target_tokens[:mask_size]
+                else:
+                    target_tokens.extend([mask_id] * target_pad)
+                target2idx[target] = len(target2idx)
+                idx2target.append(target)
+                target_matrix.append(torch.tensor(target_tokens, dtype=torch.long))
+    return torch.stack(target_matrix), target2idx, idx2target
+
+class MaskedDataset(torch.utils.data.Dataset):
+    def __init__(self, definitions, tokenizer, target2idx, target_matrix, 
+                 mask_size=0, debug=False):
+        super(MaskedDataset, self).__init__()
+        self.tokenizer = tokenizer
+    
+        self.data = []
+        self.mask_size = mask_size
+
+        T = tokenizer.convert_tokens_to_ids
+
+        (mask_id, sep_id, cls_id, pad_id, unk_id) = \
+            T(['[MASK]', '[SEP]', '[CLS]', '[PAD]', '[UNK]'])
+
+        (self.mask_id, self.sep_id, self.cls_id, self.pad_id, self.unk_id) = \
+            (mask_id, sep_id, cls_id, pad_id, unk_id)
+
+        for i, d in enumerate(definitions):
+            defn, target = d['definitions'], d['word']
+            defn_tokens = tokenizer.tokenize(defn)
+            defn_ids = [cls_id] + [mask_id] * mask_size + [sep_id] + T(defn_tokens)
+
+            target_ids = target_matrix[target2idx[target]]
+            self.data.append((torch.tensor(defn_ids), target_ids))
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, i):
+        return self.data[i]
+
+    def collate_fn(self, batch):
+        Xs = rnn_utils.pad_sequence([x for x,_ in batch], padding_value=self.pad_id, batch_first=True)
+        Ys = torch.stack([y for _,y in batch])
+        return Xs, Ys
+
 class WantWordsDataset(torch.utils.data.Dataset):  
     def __init__(self, definitions, embeddings, embedding_dim, tokenizer):
         super(WantWordsDataset, self).__init__()
@@ -61,15 +127,17 @@ class WantWordsDataset(torch.utils.data.Dataset):
         
     def __getitem__(self, i):
         return self.definitions[i]
-    
+
     def __len__(self):
         return len(self.definitions)
     
     def collate_fn(self, batch):
         #batch.sort(key=lambda elem: len(elem[0]), reverse=True)
         Xs = self.tokenizer([x for x, _ in batch], return_tensors='pt', padding=True)
-        Ys = self.embeddings.get_vecs([y for _, y in batch])
-        return (Xs, Ys)
+        Ys = [y for _, y in batch]
+        Yvecs = self.embeddings.get_vecs(Ys)
+        Yinds = [self.embeddings.stoi[w] for w in Ys]
+        return (Xs, (Yvecs, Yinds))
 
 class Dataset1(torch.utils.data.Dataset):
     def __init__(self, definitions, embeddings, embedding_dim, tokenizer=None):
