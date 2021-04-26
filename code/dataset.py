@@ -83,7 +83,7 @@ def make_vocab(data, tokenizer, mask_size=0):
     return torch.stack(target_matrix), target2idx, idx2target
 
 class MaskedDataset(torch.utils.data.Dataset):
-    def __init__(self, definitions, tokenizer, target2idx, target_matrix, 
+    def __init__(self, definitions, tokenizer, target2idx, 
                  mask_size=0, debug=False):
         super(MaskedDataset, self).__init__()
         self.tokenizer = tokenizer
@@ -104,8 +104,8 @@ class MaskedDataset(torch.utils.data.Dataset):
             defn_tokens = tokenizer.tokenize(defn)
             defn_ids = [cls_id] + [mask_id] * mask_size + [sep_id] + T(defn_tokens)
 
-            target_ids = target_matrix[target2idx[target]]
-            self.data.append((torch.tensor(defn_ids), target_ids))
+            target_idx = target2idx[target]
+            self.data.append((torch.tensor(defn_ids), target_idx))
 
     def __len__(self):
         return len(self.data)
@@ -115,7 +115,7 @@ class MaskedDataset(torch.utils.data.Dataset):
 
     def collate_fn(self, batch):
         Xs = rnn_utils.pad_sequence([x for x,_ in batch], padding_value=self.pad_id, batch_first=True)
-        Ys = torch.stack([y for _,y in batch])
+        Ys = torch.tensor([y for _,y in batch])
         return Xs, Ys
 
 class WantWordsDataset(torch.utils.data.Dataset):  
