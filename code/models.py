@@ -22,12 +22,17 @@ class MaskedRDModel(BertForMaskedLM):
         self.mask_size = mask_size
 
     def forward(self, input_ids=None, attention_mask=None, target_matrix=None, 
-                      criterion=None, ground_truth=None, **kwargs):
+                      criterion=None, ground_truth=None, sep_id=102, **kwargs):
         # input_ids: (batch, def_seq_len)
         # attention_mask: same as input_ids
         # target_matrix: (ww_vocab_size, mask_size), where values are indices into scores matrix
-        out = self.bert(input_ids=input_ids, 
-                        attention_mask=attention_mask, **kwargs)
+        
+        # Note: can assume that the sep token will not be located at end of seq
+        sep_locations = torch.roll(input_ids == sep_id, shifts=1, dims=-1)
+        token_type_ids = torch.cumsum(sep_locations, dim=-1)
+        
+        out = self.bert(input_ids=input_ids, attention_mask=attention_mask, 
+                        token_type_ids=token_type_ids, **kwargs)
         
         # scores: (batch, mask_size, bert_vocab_size) --> contains log probabilities
         scores = self.cls(out[0][:, 1:1+self.mask_size])
