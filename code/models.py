@@ -67,7 +67,7 @@ class MaskedRDModel(BertForMaskedLM):
             # weight ground truth labels more heavily
             gt_loss = torch.gather(loss, 1, ground_truth.unsqueeze(1)) * weight_gt
             # gt_loss: (batch, 1)
-            loss.scatter_(1, ground_truth.unsqueeze(1), gt_loss)
+            loss = loss.scatter(1, ground_truth.unsqueeze(1), gt_loss)
             loss = loss.sum() / batch_size
             return loss, word_scores
         elif ground_truth is not None:

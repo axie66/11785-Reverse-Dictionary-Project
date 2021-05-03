@@ -83,7 +83,7 @@ def make_vocab(data, tokenizer, mask_size=0):
     return torch.stack(target_matrix), target2idx, idx2target
 
 class MaskedDataset(torch.utils.data.Dataset):
-    def __init__(self, definitions, tokenizer, target2idx, target_matrix, 
+    def __init__(self, definitions, tokenizer, target2idx, 
                  wn_data=None, wn_categories=None, mask_size=0, debug=False):
         super(MaskedDataset, self).__init__()
         self.tokenizer = tokenizer
@@ -93,7 +93,7 @@ class MaskedDataset(torch.utils.data.Dataset):
         self.data = []
         self.mask_size = mask_size
 
-        self.ww_vocab_size = target_matrix.shape[0]
+        self.ww_vocab_size = len(target2idx)
 
         T = tokenizer.convert_tokens_to_ids
 
@@ -120,7 +120,7 @@ class MaskedDataset(torch.utils.data.Dataset):
                 # wn_ids: (ww_vocab_size,)
                 wn_ids = torch.sparse_coo_tensor(indices=[wn_ids], 
                             values=torch.tensor(1).expand(len(wn_ids)), 
-                            size=self.ww_vocab_size)
+                            size=(self.ww_vocab_size,))
                 elem = (defn_ids, target_idx, wn_ids)
             else:
                 elem = (defn_ids, target_idx)
@@ -133,14 +133,14 @@ class MaskedDataset(torch.utils.data.Dataset):
         return self.data[i]
 
     def collate_fn(self, batch):
-        if self.wordnet_data is not None:
+        if self.wn_data is not None:
             Xs = rnn_utils.pad_sequence([x for x,_,_ in batch], padding_value=self.pad_id, batch_first=True)
-            Ys = torch.stack([y for _,y,_ in batch])
+            Ys = torch.tensor([y for _,y,_ in batch])
             syns = torch.stack([syn for _,_,syn in batch])
             return Xs, Ys, syns
         else:
             Xs = rnn_utils.pad_sequence([x for x,_ in batch], padding_value=self.pad_id, batch_first=True)
-            Ys = torch.stack([y for _,y in batch])
+            Ys = torch.tensor([y for _,y in batch])
             return Xs, Ys
 
 class WantWordsDataset(torch.utils.data.Dataset):  

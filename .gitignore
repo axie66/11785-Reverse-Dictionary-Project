@@ -145,4 +145,4 @@ wantwords-english-baseline/data/*.md
 
 */wandb
 
-*/nohup.out
+*nohup.out
