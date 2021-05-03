@@ -1,6 +1,3 @@
-import torch
-from torch import nn
-
 ########################################################################
 # Our baseline models:
 # - BiLSTM
@@ -13,20 +10,33 @@ from torch import nn
 # Other models we can try:
 # - DistillBERT -> reverse dictionaries for mobile devices?
 # - CharacterBERT -> character-level BERT to be more robust to user input
+# - SenseBERT -> utilize sense-level information about word
+# - GlossBERT -> takes advantage of WordNet gloss data of words
 ########################################################################
 
+import torch
+from torch import nn
 from transformers import BertForMaskedLM
 
 class MaskedRDModel(BertForMaskedLM):
-    def set_mask_size(self, mask_size=5):
+    def initialize(self, mask_size=5, multilabel=False, ww_vocab_size=0):
         self.mask_size = mask_size
 
-    def forward(self, input_ids=None, attention_mask=None, target_matrix=None, 
-                      criterion=None, ground_truth=None, sep_id=102, **kwargs):
+        if multilabel:
+            self.bce_criterion = nn.BCEWithLogitsLoss(reduction='none')
+        else:
+            self.xent_criterion = nn.CrossEntropyLoss()
+            # Learned transformation for each mask sequence
+            # self.W_prob = nn.Parameter(torch.ones(1, ww_vocab_size, 1, mask_size),
+            #                            requires_grad=True)
+
+    def forward(self, input_ids=None, attention_mask=None, 
+                      target_matrix=None, ground_truth=None, sep_id=102,
+                      wn_ids=None, weight_gt=10, **kwargs):
         # input_ids: (batch, def_seq_len)
         # attention_mask: same as input_ids
         # target_matrix: (ww_vocab_size, mask_size), where values are indices into scores matrix
-        
+        # wn_ids: (batch, ww_vocab_size)
         # Note: can assume that the sep token will not be located at end of seq
         sep_locations = torch.roll(input_ids == sep_id, shifts=1, dims=-1)
         token_type_ids = torch.cumsum(sep_locations, dim=-1)
@@ -50,10 +60,20 @@ class MaskedRDModel(BertForMaskedLM):
         # add log probs along mask dim --> equivalent to multiplying probs
         word_scores = torch.sum(word_scores, dim=1) 
 
-        if criterion is not None and ground_truth is not None:
+        if wn_ids is not None and ground_truth is not None:
+            # wn_ids: (batch, ww_vocab_size) (sparse tensor)
+            # loss: (batch, ww_vocab_size)
+            loss = self.bce_criterion(word_scores, wn_ids)
+            # weight ground truth labels more heavily
+            gt_loss = torch.gather(loss, 1, ground_truth.unsqueeze(1)) * weight_gt
+            # gt_loss: (batch, 1)
+            loss.scatter_(1, ground_truth.unsqueeze(1), gt_loss)
+            loss = loss.sum() / batch_size
+            return loss, word_scores
+        elif ground_truth is not None:
             # ground_truth: (batch,) --> where values range from [0, vocab_size)
             # loss: (batch, ww_vocab_size)
-            loss = criterion(word_scores, ground_truth)
+            loss = self.xent_criterion(word_scores, ground_truth)
             return loss, word_scores
         return word_scores
 

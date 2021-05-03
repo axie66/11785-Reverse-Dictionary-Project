@@ -83,13 +83,17 @@ def make_vocab(data, tokenizer, mask_size=0):
     return torch.stack(target_matrix), target2idx, idx2target
 
 class MaskedDataset(torch.utils.data.Dataset):
-    def __init__(self, definitions, tokenizer, target2idx, 
-                 mask_size=0, debug=False):
+    def __init__(self, definitions, tokenizer, target2idx, target_matrix, 
+                 wn_data=None, wn_categories=None, mask_size=0, debug=False):
         super(MaskedDataset, self).__init__()
         self.tokenizer = tokenizer
+        self.wn_data = wn_data
+        self.wn_categories = wn_categories
     
         self.data = []
         self.mask_size = mask_size
+
+        self.ww_vocab_size = target_matrix.shape[0]
 
         T = tokenizer.convert_tokens_to_ids
 
@@ -103,9 +107,24 @@ class MaskedDataset(torch.utils.data.Dataset):
             defn, target = d['definitions'], d['word']
             defn_tokens = tokenizer.tokenize(defn)
             defn_ids = [cls_id] + [mask_id] * mask_size + [sep_id] + T(defn_tokens)
+            defn_ids = torch.tensor(defn_ids)
 
             target_idx = target2idx[target]
-            self.data.append((torch.tensor(defn_ids), target_idx))
+
+            if wn_data is not None and wn_categories is not None:
+                wn_ids = [target2idx[target]]
+                for cat in wn_categories:
+                    wn_ids.extend([target2idx[syn] for syn in 
+                             wn_data[target][cat]])
+                wn_ids = list(set(wn_ids)) # remove duplicates
+                # wn_ids: (ww_vocab_size,)
+                wn_ids = torch.sparse_coo_tensor(indices=[wn_ids], 
+                            values=torch.tensor(1).expand(len(wn_ids)), 
+                            size=self.ww_vocab_size)
+                elem = (defn_ids, target_idx, wn_ids)
+            else:
+                elem = (defn_ids, target_idx)
+            self.data.append(elem)
 
     def __len__(self):
         return len(self.data)
@@ -114,9 +133,15 @@ class MaskedDataset(torch.utils.data.Dataset):
         return self.data[i]
 
     def collate_fn(self, batch):
-        Xs = rnn_utils.pad_sequence([x for x,_ in batch], padding_value=self.pad_id, batch_first=True)
-        Ys = torch.tensor([y for _,y in batch])
-        return Xs, Ys
+        if self.wordnet_data is not None:
+            Xs = rnn_utils.pad_sequence([x for x,_,_ in batch], padding_value=self.pad_id, batch_first=True)
+            Ys = torch.stack([y for _,y,_ in batch])
+            syns = torch.stack([syn for _,_,syn in batch])
+            return Xs, Ys, syns
+        else:
+            Xs = rnn_utils.pad_sequence([x for x,_ in batch], padding_value=self.pad_id, batch_first=True)
+            Ys = torch.stack([y for _,y in batch])
+            return Xs, Ys
 
 class WantWordsDataset(torch.utils.data.Dataset):  
     def __init__(self, definitions, embeddings, embedding_dim, tokenizer):
@@ -179,5 +204,6 @@ class Dataset1(torch.utils.data.Dataset):
 #     return DictDataset(dictionary, embeddings, embedding_dim, tokenizer)
 
 if __name__ == '__main__':
-    d, v = get_data()
-    dataset = WantWordsDataset(d[1], v, 300, None)
+    pass
+    # d, v = get_data()
+    # dataset = WantWordsDataset(d[1], v, 300, None)

@@ -129,7 +129,9 @@ dmypy.json
 .pyre/
 
 # Don't track the datasets
-data/
+data/dictionary
+data/glove_embed
+data/wantwords
 
 wantwords-english-baseline/data/*.json
 wantwords-english-baseline/data/*.txt
