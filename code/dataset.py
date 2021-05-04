@@ -144,11 +144,25 @@ class MaskedDataset(torch.utils.data.Dataset):
             return Xs, Ys
 
 class WantWordsDataset(torch.utils.data.Dataset):  
-    def __init__(self, definitions, embeddings, embedding_dim, tokenizer):
+    def __init__(self, definition_data, tokenizer, embeddings=None):
+        '''
+        definition_data: List of dictionaries, where each dictionary contains
+                         a definition-word pair (can directly feed a dict
+                         returned by the get_data function)
+        tokenizer:       Tokenizes string/batch of strings using BPE tokenize.
+                         See SentenceBertForRD in models.py for an example.
+        embeddings:      (optional) Embedding object (returned by 
+                         get_data function)
+        '''
         super(WantWordsDataset, self).__init__()
         self.definitions = [(d['definitions'], d['word']) for d in definitions]
         self.tokenizer = tokenizer
         self.embeddings = embeddings
+
+        if embeddings is not None:
+            self.stoi = embeddings.stoi
+        else:
+            unique = {word for _, word in self.definitions}
         
     def __getitem__(self, i):
         return self.definitions[i]
@@ -158,13 +172,14 @@ class WantWordsDataset(torch.utils.data.Dataset):
     
     def collate_fn(self, batch, word2vec=True):
         Xs = self.tokenizer([x for x, _ in batch], return_tensors='pt', padding=True)
+        Xs = (Xs['input_ids'], Xs['attention_mask'])
         Ys = [y for _, y in batch]
-        if word2vec:
+        if word2vec and self.embeddings is not None:
             Yvecs = self.embeddings.get_vecs(Ys)
-            Yinds = [self.embeddings.stoi[w] for w in Ys]
-            return (Xs, (Yvecs, Yinds))
+            Yidx = [self.stoi[w] for w in Ys]
+            return (Xs, (Yvecs, Ydx))
         else:
-            Ys = self.tokenizer(Ys, return_tensors='pt', padding=True)
+            Ys = torch.tensor(Ys)
             return (Xs, Ys)
 
 class Dataset1(torch.utils.data.Dataset):

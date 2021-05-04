@@ -17,6 +17,70 @@
 import torch
 from torch import nn
 from transformers import BertForMaskedLM
+from sentence_transformers import SentenceTransformer
+
+class SentenceBERTForRD(nn.Module):
+    def __init__(self, pretrained_name, vocab_size, *sbert_args, 
+                 freeze_sbert=True, criterion=None, **sbert_kwargs):
+        '''
+        To use this model, you will need to first run "pip install sentence-transformers"
+
+        Should be used in conjunction with the WantWordsDataset class, i.e.:
+        >>> model = SentenceBERTForRD(...)
+        >>> dataset = WantWordsDataset(definitions, embeddings, model.tokenizer)
+
+        pretrained_name: Name of pretrained SentenceBERT variant to be used
+        vocab_size:      Size of output vocabulary
+        freeze_sbert:    Can optionally freeze SentenceBERT model and train
+                         only output MLP
+        criterion:       (optional) Must be one of CrossEntropyLoss, MSELoss, 
+                         and CosineSimilarity
+        '''
+        super(SentenceBERTForRD, self).__init__()
+        self.sbert = SentenceTransformer(pretrained_name, *sbert_args, **sbert_kwargs)
+        self.freeze_sbert = freeze_sbert
+        if freeze_sbert:
+            for param in self.sbert.parameters():
+                param.requires_grad = False
+        
+        hidden_dim = self.sbert.get_sentence_embedding_dimension()
+        # Simple MLP decoder --> modeled off of BERT MLM head
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.LayerNorm(hidden_dim),
+            nn.Linear(hidden_dim, vocab_size),
+        )
+
+        self.criterion = criterion
+        self.classification = None
+        if criterion is not None:
+            if isinstance(criterion, nn.CrossEntropyLoss):
+                self.classification = True
+            elif isinstance(criterion, (nn.MSELoss, nn.CosineSimilarity)):
+                self.classification = False
+            else:
+                raise Exception("Criterion must be one of CrossEntropyLoss, MSELoss, or CosineSimilarity")
+
+        # init weights of linear layer
+        for layer in self.decoder.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.normal_(self.layer.weights, mean=0.0, std=0.02)
+                nn.init.zeros_(self.layer.bias)
+    
+    def forward(self, input_ids, attention_mask, ground_truth=None):
+        # embed: (batch, 768)
+        embed = self.sbert({
+            'input_ids': input_ids, 'attention_mask': attention_mask
+        })['sentence_embedding']
+        # out: (batch, vocab_size) 
+        # prob distribution over vocabulary
+        out = self.decoder(embed)
+
+        if self.criterion is not None and ground_truth is not None:
+            loss = self.criterion(out, ground_truth)
+            return loss, out
+        return out
 
 class MaskedRDModel(BertForMaskedLM):
     def initialize(self, mask_size=5, multilabel=False, ww_vocab_size=0):
@@ -76,45 +140,3 @@ class MaskedRDModel(BertForMaskedLM):
             loss = self.xent_criterion(word_scores, ground_truth)
             return loss, word_scores
         return word_scores
-
-if __name__ == '__main__':
-    from dataset import get_data, MaskedDataset, make_vocab
-
-    model = MaskedRDModel.from_pretrained('bert-base-uncased')
-    model.set_mask_size(5)
-    x = torch.tensor([[  101,   103,   103,   103,   103,   103,   102,  2008,  2029,  3310,
-          2013, 19610,  2361,  1999,  1996,  2832,  1997, 11300, 18809,  2290,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102,  2000,  3395,  2000,
-          2019,  2552,  1997,  2061,  9527,  2100,  2926, 20951,     0,     0,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102,  2000,  4685, 20302,
-          3348,  2588,  1037,  2711,     0,     0,     0,     0,     0,     0,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102,  3218, 20302,  3348,
-          2588,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102,  8872,  9869,  2007,
-          2019,  4111,     0,     0,     0,     0,     0,     0,     0,     0,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102,  2383,  2030,  7682,
-         22681,  2022, 22155,  2094,  5628,  1037,  2022, 22155,  2094,  3269,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102, 15525,  1037, 10498,
-          2030, 22681,  2019,  2125,  4318,  2022, 22155,  2094, 14894,  2047,
-          2259,  2335],
-        [  101,   103,   103,   103,   103,   103,   102,  2109,  2926,  1997,
-          8288,  7682, 19116, 10732,  6962,  2030, 21995,  1037,  2022, 22155,
-          2094, 27940],
-        [  101,   103,   103,   103,   103,   103,   102,  3722,  2627,  9049,
-          1998,  2627,  2112, 28775, 10814,  1997, 10498,     0,     0,     0,
-             0,     0],
-        [  101,   103,   103,   103,   103,   103,   102, 19851,  2007, 22681,
-             0,     0,     0,     0,     0,     0,     0,     0,     0,     0,
-             0,     0]])
-
-    attention_mask = x > 0
-
-    word_scores = model(input_ids=x, attention_mask=attention_mask)
-
-
