@@ -38,6 +38,7 @@ class SentenceBERTForRD(nn.Module):
         '''
         super(SentenceBERTForRD, self).__init__()
         self.sbert = SentenceTransformer(pretrained_name, *sbert_args, **sbert_kwargs)
+        self.pretrained_name = pretrained_name
         self.freeze_sbert = freeze_sbert
         if freeze_sbert:
             for param in self.sbert.parameters():
@@ -65,8 +66,12 @@ class SentenceBERTForRD(nn.Module):
         # init weights of linear layer
         for layer in self.decoder.modules():
             if isinstance(layer, nn.Linear):
-                nn.init.normal_(self.layer.weights, mean=0.0, std=0.02)
-                nn.init.zeros_(self.layer.bias)
+                nn.init.normal_(layer.weight, mean=0.0, std=0.02)
+                nn.init.zeros_(layer.bias)
+                
+    def unfreeze(self):
+        for param in self.sbert.parameters():
+            param.requires_grad = True
     
     def forward(self, input_ids, attention_mask, ground_truth=None):
         # embed: (batch, 768)
