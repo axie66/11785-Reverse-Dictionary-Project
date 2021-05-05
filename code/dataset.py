@@ -58,29 +58,35 @@ class Vectors(object):
     def __call__(self, x):
         return self.get_vecs(x)
 
-def make_vocab(data, tokenizer, mask_size=0):
-    T = tokenizer.convert_tokens_to_ids
-    mask_id = T(['[MASK]'])[0]
+def make_vocab(data, tokenizer=None, mask_size=0): 
     #target2idx: (vocab_size)
     target2idx = {}
     idx2target = []
-    # target_matrix: (vocab_size, mask_size)
-    target_matrix = [] 
+    if tokenizer is not None:
+        T = tokenizer.convert_tokens_to_ids
+        mask_id = T(['[MASK]'])[0]
+        # target_matrix: (vocab_size, mask_size)
+        target_matrix = []
     for dataset in data:
         for entry in dataset:
             target = entry['word']
             if target not in target2idx:
-                target_tokens = T(tokenizer.tokenize(target))
-                target_pad = mask_size - len(target_tokens)
-                # pad/slice target sequences to length mask_size
-                if target_pad < 0:
-                    target_tokens = target_tokens[:mask_size]
-                else:
-                    target_tokens.extend([mask_id] * target_pad)
+                if tokenizer is not None:
+                    target_tokens = T(tokenizer.tokenize(target))
+                    target_pad = mask_size - len(target_tokens)
+                    # pad/slice target sequences to length mask_size
+                    if target_pad < 0:
+                        target_tokens = target_tokens[:mask_size]
+                    else:
+                        target_tokens.extend([mask_id] * target_pad)
+                    target_matrix.append(torch.tensor(target_tokens, dtype=torch.long))
                 target2idx[target] = len(target2idx)
                 idx2target.append(target)
-                target_matrix.append(torch.tensor(target_tokens, dtype=torch.long))
-    return torch.stack(target_matrix), target2idx, idx2target
+    result = (target2idx, idx2target)
+    if tokenizer is not None:
+        return (torch.stack(target_matrix),) + result
+    else:
+        return target2idx, idx2target
 
 class MaskedDataset(torch.utils.data.Dataset):
     def __init__(self, definitions, tokenizer, target2idx, 
@@ -107,6 +113,8 @@ class MaskedDataset(torch.utils.data.Dataset):
             defn, target = d['definitions'], d['word']
             defn_tokens = tokenizer.tokenize(defn)
             defn_ids = [cls_id] + [mask_id] * mask_size + [sep_id] + T(defn_tokens)
+            defn_ids = defn_ids[:256] # cut off definition at 256 tokens
+            defn_ids += [sep_id]
             defn_ids = torch.tensor(defn_ids)
 
             target_idx = target2idx[target]
@@ -162,7 +170,7 @@ class WantWordsDataset(torch.utils.data.Dataset):
         if embeddings is not None:
             self.stoi = embeddings.stoi
         else:
-            unique = {word for _, word in self.definitions}
+            
         
     def __getitem__(self, i):
         return self.definitions[i]
