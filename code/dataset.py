@@ -84,7 +84,7 @@ def make_vocab(data, tokenizer, mask_size=0):
 
 class MaskedDataset(torch.utils.data.Dataset):
     def __init__(self, definitions, tokenizer, target2idx, 
-                 wn_data=None, wn_categories=None, mask_size=0, debug=False):
+                 wn_data=None, wn_categories=None, mask_size=1, debug=False):
         super(MaskedDataset, self).__init__()
         self.tokenizer = tokenizer
         self.wn_data = wn_data

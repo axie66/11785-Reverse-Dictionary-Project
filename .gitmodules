@@ -1,0 +1,3 @@
+[submodule "character-bert"]
+	path = character-bert
+	url = https://github.com/Kathryn-cat/character-bert.git
