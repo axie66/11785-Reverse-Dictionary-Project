@@ -83,11 +83,11 @@ class SentenceBERTForRD(nn.Module):
         return out
 
 class MaskedRDModel(BertForMaskedLM):
-    def initialize(self, mask_size=5, multilabel=False, ww_vocab_size=0):
+    def initialize(self, mask_size=5, multilabel=False, ww_vocab_size=0, pos_weight=5):
         self.mask_size = mask_size
 
         if multilabel:
-            self.bce_criterion = nn.BCEWithLogitsLoss(reduction='none')
+            self.bce_criterion = nn.BCEWithLogitsLoss(reduction='none', pos_weight=torch.tensor(pos_weight).expand(ww_vocab_size))
         else:
             self.xent_criterion = nn.CrossEntropyLoss()
             # Learned transformation for each mask sequence
@@ -103,7 +103,8 @@ class MaskedRDModel(BertForMaskedLM):
         # wn_ids: (batch, ww_vocab_size)
         # Note: can assume that the sep token will not be located at end of seq
         sep_locations = torch.roll(input_ids == sep_id, shifts=1, dims=-1)
-        token_type_ids = torch.cumsum(sep_locations, dim=-1)
+        sep_locations[:, 0] = 0 # last [SEP] will wrap to 0th position
+        token_type_ids = (torch.cumsum(sep_locations, dim=-1) > 0).long()
         
         out = self.bert(input_ids=input_ids, attention_mask=attention_mask, 
                         token_type_ids=token_type_ids, **kwargs)
