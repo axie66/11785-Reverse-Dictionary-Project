@@ -16,5 +16,6 @@ from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer, 
 from modeling.character_bert import CharacterBertModel
 from utils.character_cnn import CharacterIndexer
 
-# define the model here 
+tokenizer = BertTokenizer.from_pretrained('./pretrained-models/bert-base-uncased/')
+
 
