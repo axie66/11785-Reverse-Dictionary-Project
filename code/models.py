@@ -151,7 +151,7 @@ class MaskedRDModel(BertForMaskedLM):
         return word_scores
 
 class CharacterBERTForRD(nn.Module):
-    def __init__(self, vocab_size, *cbert_args, freeze_cbert=True, criterion=nn.CTCLoss(), **cbert_kwargs):
+    def __init__(self, vocab_size, *cbert_args, freeze_cbert=True, criterion=nn.CrossEntropyLoss(), **cbert_kwargs):
         super(CharacterBERTForRD, self).__init__()
         self.cbert = CharacterBertModel.from_pretrained('../character-bert/pretrained-models/general_character_bert')
         self.freeze_cbert = freeze_cbert
@@ -183,15 +183,10 @@ class CharacterBERTForRD(nn.Module):
         embed, _ = self.cbert(input_ids)
         # out: (batch, sentence_length, 768) 
         # prob distribution over vocabulary
-        out = self.decoder(embed)
+        out = self.decoder(embed[:, 1])
 
         if self.criterion is not None and ground_truth is not None:
-            out = torch.transpose(out, 0, 1)
-            T, N, C = out.shape
-            input_lengths = tuple([T] * N)
-            target_lengths = tuple([1] * N)
-            loss = self.criterion(out, ground_truth, input_lengths, target_lengths)
-            out = torch.transpose(out, 0, 1)
+            loss = self.criterion(out, ground_truth)
             return loss, out
         return out
 

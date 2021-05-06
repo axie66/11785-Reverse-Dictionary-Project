@@ -62,12 +62,8 @@ print(f'Loading data ... complete.')
 
 epochs = 30
 
-lr = 6e-3
-optim = AdamW(model.parameters(), lr=lr)
-
-warmup_duration = 0.01
-scheduler = get_linear_schedule_with_warmup(optim, num_warmup_steps=len(train_loader) * warmup_duration, \
-                                            num_training_steps=len(train_loader) * epochs)
+optim = torch.optim.SGD([{'params': model.cbert.parameters(), 'lr': 2e-5}, \
+                         {'params': model.decoder.parameters(), 'lr': 1e-3, 'momentum': 0.9}])
 
 epoch = 0
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -76,12 +72,9 @@ model = model.to(device)
 
 wandb.init(project='reverse-dictionary', entity='reverse-dict', name='character-bert')
 config = wandb.config
-config.learning_rate = lr
 config.epochs = epochs
 config.batch_size = batch_size
 config.optimizer = type(optim).__name__
-config.scheduler = type(scheduler).__name__
-config.warmup_duration = warmup_duration
 wandb.watch(model)
 
 def evaluate(pred, gt, test=False):
@@ -116,17 +109,15 @@ def test(loader, name):
     all_pred = []
     with torch.no_grad():
         with tqdm(total=len(loader)) as pbar:
-            for i, ((x, attention_mask), y) in enumerate(loader):
+            for i, (x, y) in enumerate(loader):
                 if i % inc == 0 and i != 0:
                     display_loss = test_loss / i
                     pbar.set_description(f'Test Loss: {display_loss}')
 
                 x = x.to(device)
-                attention_mask = attention_mask.to(device)
                 y = y.to(device)
 
-                loss, out = model(input_ids=x, attention_mask=attention_mask,
-                                  ground_truth=y)
+                loss, out = model(x, ground_truth=y)
 
                 test_loss += loss.detach()
 
@@ -199,8 +190,6 @@ for epoch in range(epoch, epochs):
 
             train_loss += loss.detach()
 
-            scheduler.step()
-
             pbar.update(1)
 
             del x, y, out, loss 
@@ -228,11 +217,33 @@ for epoch in range(epoch, epochs):
 
                 pbar.update(1) 
 
-                # todo: evaluate fn 
+                result, indices = torch.topk(out, k=100, dim=-1, largest=True, sorted=True)
+
+                acc1, acc10, acc100 = evaluate(indices, y)
+                val_acc1 += acc1
+                val_acc10 += acc10
+                val_acc100 += acc100
 
                 del x, y, out, loss
 
     wandb.log({
         'train_loss': train_loss / len(train_loader),
         'val_loss': val_loss / len(dev_loader),
+        'val_acc1': val_acc1 / len(dev_loader),
+        'val_acc10': val_acc10 / len(dev_loader),
+        'val_acc100': val_acc100 / len(dev_loader),
+        **test(test_loader_seen, 'seen'),
+        **test(test_loader_unseen, 'unseen'),
+        **test(test_loader_desc, 'desc')
     })
+
+def getPredFromDesc(model, desc : str, top_n=10):
+    desc = T(desc, return_tensors='pt', padding=True)
+    x = desc['input_ids'].to(device)
+    attention_mask = desc['attention_mask'].to(device)
+    out = model(input_ids=x, attention_mask=attention_mask)
+    result, indices = torch.topk(out, k=top_n, dim=-1, largest=True, sorted=True)
+    
+    indices = indices[0]
+    return [idx2target[i] for i in indices], indices
+
