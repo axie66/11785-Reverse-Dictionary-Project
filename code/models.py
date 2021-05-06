@@ -18,6 +18,9 @@ import torch
 from torch import nn
 from transformers import BertForMaskedLM
 from sentence_transformers import SentenceTransformer
+import sys
+sys.path.append('../character-bert')
+from modeling.character_bert import CharacterBertModel
 
 class SentenceBERTForRD(nn.Module):
     def __init__(self, pretrained_name, vocab_size, *sbert_args, 
@@ -146,3 +149,49 @@ class MaskedRDModel(BertForMaskedLM):
             loss = self.xent_criterion(word_scores, ground_truth)
             return loss, word_scores
         return word_scores
+
+class CharacterBERTForRD(nn.Module):
+    def __init__(self, vocab_size, *cbert_args, freeze_cbert=True, criterion=nn.CTCLoss(), **cbert_kwargs):
+        super(CharacterBERTForRD, self).__init__()
+        self.cbert = CharacterBertModel.from_pretrained('../character-bert/pretrained-models/general_character_bert')
+        self.freeze_cbert = freeze_cbert
+        if freeze_cbert:
+            for param in self.cbert.parameters():
+                param.requires_grad = False
+        
+        # Simple MLP decoder --> modeled off of BERT MLM head
+        self.decoder = nn.Sequential(
+            nn.Linear(768, 768),
+            nn.GELU(),
+            nn.LayerNorm(768),
+            nn.Linear(768, vocab_size),
+        )
+
+        self.criterion = criterion
+
+        # init weights of linear layer
+        for layer in self.decoder.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.normal_(layer.weight, mean=0.0, std=0.02)
+                nn.init.zeros_(layer.bias)
+                
+    def unfreeze(self):
+        for param in self.cbert.parameters():
+            param.requires_grad = True
+    
+    def forward(self, input_ids, ground_truth=None):
+        embed, _ = self.cbert(input_ids)
+        # out: (batch, sentence_length, 768) 
+        # prob distribution over vocabulary
+        out = self.decoder(embed)
+
+        if self.criterion is not None and ground_truth is not None:
+            out = torch.transpose(out, 0, 1)
+            T, N, C = out.shape
+            input_lengths = tuple([T] * N)
+            target_lengths = tuple([1] * N)
+            loss = self.criterion(out, ground_truth, input_lengths, target_lengths)
+            out = torch.transpose(out, 0, 1)
+            return loss, out
+        return out
+

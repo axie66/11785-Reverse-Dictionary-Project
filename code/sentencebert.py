@@ -62,6 +62,7 @@ scheduler = get_linear_schedule_with_warmup(optim, num_warmup_steps=len(train_lo
 epoch = 0
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 wandb.init(project='reverse-dictionary', entity='reverse-dict', name='sentence-bert')
 config = wandb.config

@@ -152,7 +152,7 @@ class MaskedDataset(torch.utils.data.Dataset):
             return Xs, Ys
 
 class WantWordsDataset(torch.utils.data.Dataset):  
-    def __init__(self, definition_data, tokenizer, target2idx=None, embeddings=None):
+    def __init__(self, definition_data, tokenizer, target2idx=None, embeddings=None, is_character_bert=False):
         '''
         definition_data: List of dictionaries, where each dictionary contains
                          a definition-word pair (can directly feed a dict
