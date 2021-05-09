@@ -23,7 +23,7 @@ sys.path.append('../character-bert')
 from modeling.character_bert import CharacterBertModel
 
 class SentenceBERTForRD(nn.Module):
-    def __init__(self, pretrained_name, vocab_size, *sbert_args, 
+    def __init__(self, pretrained_name, out_dim, *sbert_args, 
                  freeze_sbert=True, criterion=None, **sbert_kwargs):
         '''
         To use this model, you will need to first run "pip install sentence-transformers"
@@ -53,7 +53,7 @@ class SentenceBERTForRD(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, vocab_size),
+            nn.Linear(hidden_dim, out_dim),
         )
 
         self.criterion = criterion
@@ -91,7 +91,8 @@ class SentenceBERTForRD(nn.Module):
         return out
 
 class MaskedRDModel(BertForMaskedLM):
-    def initialize(self, mask_size=5, multilabel=False, ww_vocab_size=0, pos_weight=5):
+    def initialize(self, mask_start=1, mask_size=5, multilabel=False, ww_vocab_size=0, pos_weight=5):
+        self.mask_start = mask_start
         self.mask_size = mask_size
 
         if multilabel:
@@ -118,7 +119,7 @@ class MaskedRDModel(BertForMaskedLM):
                         token_type_ids=token_type_ids, **kwargs)
         
         # scores: (batch, mask_size, bert_vocab_size) --> contains log probabilities
-        scores = self.cls(out[0][:, 1:1+self.mask_size])
+        scores = self.cls(out[0][:, self.mask_start:self.mask_start+self.mask_size])
 
         batch_size = scores.shape[0]
         # target_matrix: (batch, mask_size, ww_vocab_size)
