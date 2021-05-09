@@ -11,8 +11,8 @@ We have tried several BERT-based methods to tackle this problem.
 
 ### Code
 
-* `bert_baseline.py`: Replicates the baseline outlined in BERT for Monolingual and Cross-Lingual Reverse Dictionary 
-* `bert_masking.py`: Implements the masked BERT model.
+* `bert_baseline.py`: Implements a BERT model that maps definitions to the word2vec representations of the words they define
+* `bert_masking.py`: Implements the masked BERT model (the baseline outlined in BERT for Monolingual and Cross-Lingual Reverse Dictionary).
 * `bert_mask_multilabel.py`: Implements the multilabel masked BERT model.
 * `sentencebert.py`: Implements the SentenceBERT model described in our paper.
 * `character_bert.py`: Implements the CharacterBERT model described in our paper.
