@@ -1,4 +1,9 @@
-# 11785 Project: Evaluating BERT Approaches for Reverse Dictionaries
+# Evaluating BERT Approaches for Reverse Dictionaries
+<center>
+    <img src="images/BertRD.png" width="400"/>
+</center>
+
+### The Reverse Dictionary
 
 Reverse dictionaries aim to solve a very common problem: given the definition or description of a word, can we accurately find that word? Reverse dictionary has a wide range of applications from helping writers better express themselves to aiding in second language acquisition. The past few years have witnessed great interest in reverse dictionaries, with approaches ranging from database-driven models to recurrent neural networks. 
 
