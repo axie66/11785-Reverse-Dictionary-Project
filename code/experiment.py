@@ -2,20 +2,21 @@ import sys
 import torch
 import numpy as np
 import pandas as pd
+
 try:
     import torchtext
 except ImportError:
-    sys.path.append('/usr/local/lib/python3.8/site-packages/')
+    sys.path.append("/usr/local/lib/python3.8/site-packages/")
     import torchtext
 
-dict_data_path = '../data/dictionary/reverse-dict-singleton.tsv'
+dict_data_path = "../data/dictionary/reverse-dict-singleton.tsv"
 glove_embed_dim = 300  # other options are 100, 200, 300
-glove_embed_path = f'../data/glove_embed/glove.6B.{glove_embed_dim}d.txt'
+glove_embed_path = f"../data/glove_embed/glove.6B.{glove_embed_dim}d.txt"
 
 # Load dictionary data
 # Assuming the .tsv files from Prof Oflazer are
 # placed in the data/dictionary folder
-dict_data = pd.read_csv(dict_data_path, sep='\t', header=None)
+dict_data = pd.read_csv(dict_data_path, sep="\t", header=None)
 dict_data.head(5)
 
 # Load pretrained GloVe embeddings
@@ -23,10 +24,10 @@ dict_data.head(5)
 # and place them in the data/glove_embed folder
 glove_embed = torchtext.vocab.Vectors(glove_embed_path)
 
-s, p = glove_embed.get_vecs_by_tokens(['ice', 'gorilla'])
+s, p = glove_embed.get_vecs_by_tokens(["ice", "gorilla"])
 print(s @ p)
 
-d, p = glove_embed.get_vecs_by_tokens(['ice', 'cold'])
+d, p = glove_embed.get_vecs_by_tokens(["ice", "cold"])
 print(d @ p)
 
 
@@ -50,8 +51,10 @@ class DictDataset(torch.utils.data.Dataset):
         # definition, in plain text form
         word, def_text = self.definitions.loc[i]
         tokens = self.tokenizer(def_text)
-        return self.embeddings.get_vecs_by_tokens(tokens), \
-            self.embeddings.get_vecs_by_tokens([word]).squeeze()
+        return (
+            self.embeddings.get_vecs_by_tokens(tokens),
+            self.embeddings.get_vecs_by_tokens([word]).squeeze(),
+        )
 
     def __len__(self):
         return len(self.definitions)
@@ -60,14 +63,14 @@ class DictDataset(torch.utils.data.Dataset):
     def collate_fn(batch):
         batch.sort(key=lambda elem: len(elem[0]), reverse=True)
         Xs = [x for x, _ in batch]
-        Ys = ([y for _, y in batch])
-        return (torch.nn.utils.rnn.pack_sequence(Xs),
-                torch.stack(Ys))
+        Ys = [y for _, y in batch]
+        return (torch.nn.utils.rnn.pack_sequence(Xs), torch.stack(Ys))
 
 
 data = DictDataset(dict_data, glove_embed, 50)
-loader = torch.utils.data.DataLoader(data, shuffle=True, batch_size=16,
-                                     collate_fn=DictDataset.collate_fn)
+loader = torch.utils.data.DataLoader(
+    data, shuffle=True, batch_size=16, collate_fn=DictDataset.collate_fn
+)
 
 # The below code is attempting to learn the word embedding from
 # the definition, which isn't exactly what we want to do
@@ -81,7 +84,8 @@ for i, (x, y) in zip(range(1000), loader):
     out, (h, c) = model(x)
     (out_pad, out_lengths) = torch.nn.utils.rnn.pad_packed_sequence(out)
     out_embeds = torch.stack(
-        list(out_pad[j] for j in zip(out_lengths-1, range(len(out_lengths)))))
+        list(out_pad[j] for j in zip(out_lengths - 1, range(len(out_lengths))))
+    )
     loss = criterion(out_embeds, y)
     if i % 100 == 0:
         print(i, loss.detach())
@@ -94,5 +98,5 @@ out, (h, c) = model(x)
 out_pad.shape, out_lengths
 
 
-for q in list(zip(out_lengths-1, range(len(out_lengths)))):
+for q in list(zip(out_lengths - 1, range(len(out_lengths)))):
     r = out_pad[q]

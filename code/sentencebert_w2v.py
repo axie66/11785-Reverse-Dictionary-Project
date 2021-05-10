@@ -5,31 +5,41 @@ import numpy as np
 from tqdm.notebook import tqdm
 import sys
 import datetime
-sys.path.append('../code')
+
+sys.path.append("../code")
 from dataset import get_data, make_vocab, WantWordsDataset as WWDataset
-from transformers import (
-    AdamW, get_linear_schedule_with_warmup
-)
+from transformers import AdamW, get_linear_schedule_with_warmup
 from models import SentenceBERTForRD
 import wandb
 
 
-d = get_data('../wantwords-english-baseline/data', word2vec=True)
+d = get_data("../wantwords-english-baseline/data", word2vec=True)
 
-train_data, train_data_def, dev_data, \
-    test_data_seen, test_data_unseen, test_data_desc, word2vec = d
+(
+    train_data,
+    train_data_def,
+    dev_data,
+    test_data_seen,
+    test_data_unseen,
+    test_data_desc,
+    word2vec,
+) = d
 
 target2idx, idx2target = make_vocab(d[:-1], None)
 
 # target2idx maps target words to indices
 # target_matrix maps target indices to bpe sequences,
 # padded/truncated to mask_size
-target2idx['book'], idx2target[target2idx['book']]
+target2idx["book"], idx2target[target2idx["book"]]
 
 # can freeze for (part of) first epoch or so and then
 # unfreeze to train the whole model
-model = SentenceBERTForRD('distilbert-base-nli-stsb-mean-tokens',
-                          300, freeze_sbert=False, criterion=nn.MSELoss())
+model = SentenceBERTForRD(
+    "distilbert-base-nli-stsb-mean-tokens",
+    300,
+    freeze_sbert=False,
+    criterion=nn.MSELoss(),
+)
 
 T = model.sbert.tokenizer
 train_dataset = WWDataset(train_data + train_data_def, T, target2idx, word2vec)
@@ -42,21 +52,23 @@ batch_size = 55
 num_workers = 0
 
 loader_params = {
-    'pin_memory': False,
-    'batch_size': batch_size,
-    'num_workers': num_workers,
-    'collate_fn': train_dataset.collate_fn
+    "pin_memory": False,
+    "batch_size": batch_size,
+    "num_workers": num_workers,
+    "collate_fn": train_dataset.collate_fn,
 }
 
-train_loader = data.DataLoader(train_dataset, **{'shuffle': True,
-                               **loader_params})
-dev_loader = data.DataLoader(dev_dataset, **{'shuffle': True, **loader_params})
-test_loader_seen = data.DataLoader(test_dataset_seen, **{'shuffle': False,
-                                   **loader_params})
-test_loader_unseen = data.DataLoader(test_dataset_unseen, **{'shuffle': False,
-                                     **loader_params})
-test_loader_desc = data.DataLoader(test_dataset_desc, **{'shuffle': False,
-                                   **loader_params})
+train_loader = data.DataLoader(train_dataset, **{"shuffle": True, **loader_params})
+dev_loader = data.DataLoader(dev_dataset, **{"shuffle": True, **loader_params})
+test_loader_seen = data.DataLoader(
+    test_dataset_seen, **{"shuffle": False, **loader_params}
+)
+test_loader_unseen = data.DataLoader(
+    test_dataset_unseen, **{"shuffle": False, **loader_params}
+)
+test_loader_desc = data.DataLoader(
+    test_dataset_desc, **{"shuffle": False, **loader_params}
+)
 epochs = 10
 lr = 2e-5
 optim = AdamW(model.parameters(), lr=lr)
@@ -65,11 +77,12 @@ warmup_duration = 0.01  # portion of the first epoch spent on lr warmup
 scheduler = get_linear_schedule_with_warmup(
     optim,
     num_warmup_steps=len(train_loader) * warmup_duration,
-    num_training_steps=len(train_loader) * epochs)
+    num_training_steps=len(train_loader) * epochs,
+)
 epoch = 0
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-wandb.init(project='reverse-dictionary', entity='reverse-dict')
+wandb.init(project="reverse-dictionary", entity="reverse-dict")
 config = wandb.config
 config.learning_rate = lr
 config.epochs = epochs
@@ -103,7 +116,7 @@ def evaluate(pred, gt, test=False):
         pred_rank = torch.tensor(pred_rank, dtype=torch.float32)
         return (acc1, acc10, acc100, pred_rank)
     else:
-        return acc1/n, acc10/n, acc100/n
+        return acc1 / n, acc10 / n, acc100 / n
 
 
 def test(loader, name):
@@ -118,20 +131,20 @@ def test(loader, name):
             for i, ((x, attention_mask), y, yvecs) in enumerate(loader):
                 if i % inc == 0 and i != 0:
                     display_loss = test_loss / i
-                    pbar.set_description(f'Test Loss: {display_loss}')
+                    pbar.set_description(f"Test Loss: {display_loss}")
 
                 x = x.to(device)
                 attention_mask = attention_mask.to(device)
                 y = y.to(device)
                 yvecs = yvecs.to(device)
-                loss, out = model(input_ids=x, attention_mask=attention_mask,
-                                  ground_truth=yvecs)
+                loss, out = model(
+                    input_ids=x, attention_mask=attention_mask, ground_truth=yvecs
+                )
                 test_loss += loss.detach()
                 out = out @ word2vec.embeddings.T
                 result, indices = torch.sort(out, descending=True)
                 b = len(x)
-                acc1, acc10, acc100, pred_rank = evaluate(indices, y,
-                                                          test=True)
+                acc1, acc10, acc100, pred_rank = evaluate(indices, y, test=True)
                 test_acc1 += acc1
                 test_acc10 += acc10
                 test_acc100 += acc100
@@ -148,23 +161,23 @@ def test(loader, name):
     test_acc100 /= total_seen
     all_pred = torch.tensor(all_pred)
     median = torch.median(all_pred)
-    var = torch.var(all_pred)**0.5
+    var = torch.var(all_pred) ** 0.5
 
-    print(f'{name}_test_loss:', test_loss)
-    print(f'{name}_test_acc1:', test_acc1)
-    print(f'{name}_test_acc10:', test_acc10)
-    print(f'{name}_test_acc100:', test_acc100)
-    print(f'{name}_test_rank_median:', median)
-    print(f'{name}_test_rank_variance', var)
+    print(f"{name}_test_loss:", test_loss)
+    print(f"{name}_test_acc1:", test_acc1)
+    print(f"{name}_test_acc10:", test_acc10)
+    print(f"{name}_test_acc100:", test_acc100)
+    print(f"{name}_test_rank_median:", median)
+    print(f"{name}_test_rank_variance", var)
 
-    return ({
-        f'{name}_test_loss': test_loss,
-        f'{name}_test_acc1': test_acc1,
-        f'{name}_test_acc10': test_acc10,
-        f'{name}_test_acc100': test_acc100,
-        f'{name}_test_rank_median': median,
-        f'{name}_test_rank_variance': var
-    })
+    return {
+        f"{name}_test_loss": test_loss,
+        f"{name}_test_acc1": test_acc1,
+        f"{name}_test_acc10": test_acc10,
+        f"{name}_test_acc100": test_acc100,
+        f"{name}_test_rank_median": median,
+        f"{name}_test_rank_variance": var,
+    }
 
 
 inc = 10
@@ -179,14 +192,17 @@ for epoch in range(epoch, epochs):
         for i, ((x, attention_mask), _, yvecs) in enumerate(train_loader):
             if i % inc == 0 and i != 0:
                 display_loss = train_loss / i
-                pbar.set_description(f'Epoch {epoch+1}, \
-                    Train Loss: {train_loss / i}')
+                pbar.set_description(
+                    f"Epoch {epoch+1}, \
+                    Train Loss: {train_loss / i}"
+                )
             optim.zero_grad()
             x = x.to(device)
             attention_mask = attention_mask.to(device)
             yvecs = yvecs.to(device)
-            loss, out = model(input_ids=x, attention_mask=attention_mask,
-                              ground_truth=yvecs)
+            loss, out = model(
+                input_ids=x, attention_mask=attention_mask, ground_truth=yvecs
+            )
             loss.backward()
             nn.utils.clip_grad_value_(model.parameters(), 5)
             optim.step()
@@ -196,10 +212,12 @@ for epoch in range(epoch, epochs):
             del x, yvecs, out, loss, attention_mask
 
     model_name = type(model).__name__
-    filename = f'../trained_models/{model_name} Epoch {epoch+1} \
-        at {datetime.datetime.now()}'.replace(' ', '_')
-    with open(filename, 'wb+') as f:
-        torch.save({'state_dict': model.state_dict()}, f)
+    filename = f"../trained_models/{model_name} Epoch {epoch+1} \
+        at {datetime.datetime.now()}".replace(
+        " ", "_"
+    )
+    with open(filename, "wb+") as f:
+        torch.save({"state_dict": model.state_dict()}, f)
 
     # Validation
     model.eval()
@@ -210,19 +228,23 @@ for epoch in range(epoch, epochs):
             for i, ((x, attention_mask), y, yvecs) in enumerate(dev_loader):
                 if i % inc == 0 and i != 0:
                     display_loss = val_loss / i
-                    pbar.set_description(f'Epoch {epoch+1}, \
-                        Val Loss: {val_loss / i}')
+                    pbar.set_description(
+                        f"Epoch {epoch+1}, \
+                        Val Loss: {val_loss / i}"
+                    )
 
                 x = x.to(device)
                 attention_mask = attention_mask.to(device)
                 y = y.to(device)
                 yvecs = yvecs.to(device)
-                loss, out = model(input_ids=x, attention_mask=attention_mask,
-                                  ground_truth=yvecs)
+                loss, out = model(
+                    input_ids=x, attention_mask=attention_mask, ground_truth=yvecs
+                )
                 out = out @ word2vec.embeddings.T
                 val_loss += loss.detach()
-                result, indices = torch.topk(out, k=100, dim=-1, largest=True,
-                                             sorted=True)
+                result, indices = torch.topk(
+                    out, k=100, dim=-1, largest=True, sorted=True
+                )
                 acc1, acc10, acc100 = evaluate(indices, y)
                 val_acc1 += acc1
                 val_acc10 += acc10
@@ -230,36 +252,39 @@ for epoch in range(epoch, epochs):
                 del x, y, yvecs, out, loss
                 pbar.update(1)
 
-    wandb.log({
-        'train_loss': train_loss / len(train_loader),
-        'val_loss': val_loss / len(dev_loader),
-        'val_acc1': val_acc1 / len(dev_loader),
-        'val_acc10': val_acc10 / len(dev_loader),
-        'val_acc100': val_acc100 / len(dev_loader),
-        **test(test_loader_seen, 'seen'),
-        **test(test_loader_unseen, 'unseen'),
-        **test(test_loader_desc, 'desc')
-    })
+    wandb.log(
+        {
+            "train_loss": train_loss / len(train_loader),
+            "val_loss": val_loss / len(dev_loader),
+            "val_acc1": val_acc1 / len(dev_loader),
+            "val_acc10": val_acc10 / len(dev_loader),
+            "val_acc100": val_acc100 / len(dev_loader),
+            **test(test_loader_seen, "seen"),
+            **test(test_loader_unseen, "unseen"),
+            **test(test_loader_desc, "desc"),
+        }
+    )
 
 
 def getPredFromDesc(model, desc: str, top_n=10):
     model = model.eval()
-    desc = T(desc, return_tensors='pt', padding=True)
-    x = desc['input_ids'].to(device)
-    attention_mask = desc['attention_mask'].to(device)
+    desc = T(desc, return_tensors="pt", padding=True)
+    x = desc["input_ids"].to(device)
+    attention_mask = desc["attention_mask"].to(device)
     out = model(input_ids=x, attention_mask=attention_mask)
     out = out @ word2vec.embeddings.T
-    result, indices = torch.topk(out, k=top_n, dim=-1, largest=True,
-                                 sorted=True)
+    result, indices = torch.topk(out, k=top_n, dim=-1, largest=True, sorted=True)
     indices = indices[0]
     return [word2vec.itos[i] for i in indices], indices
 
 
-print(test(test_loader_seen, 'seen'))
-print(test(test_loader_unseen, 'unseen'))
-print(test(test_loader_desc, 'desc'))
+print(test(test_loader_seen, "seen"))
+print(test(test_loader_unseen, "unseen"))
+print(test(test_loader_desc, "desc"))
 model_name = type(model).__name__
-filename = f'../trained_models/{model_name} Epoch {epoch+1} \
-    at {datetime.datetime.now()}'.replace(' ', '_')
-with open(filename, 'wb+') as f:
-    torch.save({'state_dict': model.state_dict()}, f)
+filename = f"../trained_models/{model_name} Epoch {epoch+1} \
+    at {datetime.datetime.now()}".replace(
+    " ", "_"
+)
+with open(filename, "wb+") as f:
+    torch.save({"state_dict": model.state_dict()}, f)
